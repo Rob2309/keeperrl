@@ -6,9 +6,7 @@
 namespace fx {
 
 void DrawBuffers::clear() {
-  positions.clear();
-  texCoords.clear();
-  colors.clear();
+  vertices.clear();
   elements.clear();
 }
 
@@ -26,27 +24,19 @@ void DrawBuffers::add(const DrawParticle* particles, int count) {
     auto& quad = particles[n];
     auto* last = &elements.back();
     if (last->texName != quad.texName) {
-      Element new_elem{(int)positions.size(), 0, quad.texName};
+      Element new_elem{(int)vertices.size(), 0, quad.texName};
       elements.emplace_back(new_elem);
       last = &elements.back();
     }
-    last->numVertices += 4;
+    last->numVertices += 6;
 
-    positions.insert(positions.end(), begin(quad.positions), end(quad.positions));
-    texCoords.insert(texCoords.end(), begin(quad.texCoords), end(quad.texCoords));
-
-    union {
-      struct {
-        unsigned char r, g, b, a;
-      } channels;
-      unsigned int ivalue;
-      };
-
-      channels.r = quad.color.r;
-      channels.g = quad.color.g;
-      channels.b = quad.color.b;
-      channels.a = quad.color.a;
-      colors.resize(colors.size() + 4, ivalue);
+    vertices.push_back(Vertex { { quad.positions[0].x, quad.positions[0].y }, { quad.texCoords[0].x, quad.texCoords[0].y }, { quad.color.r, quad.color.g, quad.color.b, quad.color.a } });
+    vertices.push_back(Vertex { { quad.positions[1].x, quad.positions[1].y }, { quad.texCoords[1].x, quad.texCoords[1].y }, { quad.color.r, quad.color.g, quad.color.b, quad.color.a } });
+    vertices.push_back(Vertex { { quad.positions[2].x, quad.positions[2].y }, { quad.texCoords[2].x, quad.texCoords[2].y }, { quad.color.r, quad.color.g, quad.color.b, quad.color.a } });
+    
+    vertices.push_back(Vertex { { quad.positions[2].x, quad.positions[2].y }, { quad.texCoords[2].x, quad.texCoords[2].y }, { quad.color.r, quad.color.g, quad.color.b, quad.color.a } });
+    vertices.push_back(Vertex { { quad.positions[0].x, quad.positions[0].y }, { quad.texCoords[0].x, quad.texCoords[0].y }, { quad.color.r, quad.color.g, quad.color.b, quad.color.a } });
+    vertices.push_back(Vertex { { quad.positions[3].x, quad.positions[3].y }, { quad.texCoords[3].x, quad.texCoords[3].y }, { quad.color.r, quad.color.g, quad.color.b, quad.color.a } });
   }
 }
 }

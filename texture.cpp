@@ -45,26 +45,26 @@ Texture::Texture(const FilePath& filename, int px, int py, int w, int h) : path(
 Texture::Texture(Color color, int width, int height) {
   vector<Color> colors(width * height, color);
   texId = 0;
-  SDL::glGenTextures(1, &*texId);
+  glGenTextures(1, &*texId);
   setParams(Filter::nearest, Wrapping::repeat);
-  SDL::glBindTexture(GL_TEXTURE_2D, *texId);
-  SDL::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, colors.data());
+  glBindTexture(GL_TEXTURE_2D, *texId);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, colors.data());
   CHECK_OPENGL_ERROR();
 
   realSize = size = Vec2(width, height);
-  SDL::glBindTexture(GL_TEXTURE_2D, 0);
+  glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Texture::setParams(Filter filter, Wrapping wrap) {
   if (*texId) {
     auto glFilter = filter == Filter::nearest ? GL_NEAREST : GL_LINEAR;
-    auto glWrap = wrap == Wrapping::clamp ? GL_CLAMP : GL_REPEAT;
+    auto glWrap = wrap == Wrapping::clamp ? GL_CLAMP_TO_EDGE : GL_REPEAT;
 
-    SDL::glBindTexture(GL_TEXTURE_2D, *texId);
-    SDL::glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glFilter);
-    SDL::glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
-    SDL::glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glWrap);
-    SDL::glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, glWrap);
+    glBindTexture(GL_TEXTURE_2D, *texId);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, glWrap);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, glWrap);
   }
 }
 
@@ -79,7 +79,7 @@ Texture::Texture(Texture&& tex) noexcept {
 
 Texture::~Texture() {
   if (texId)
-    SDL::glDeleteTextures(1, &*texId);
+    glDeleteTextures(1, &*texId);
 }
 
 Texture& Texture::operator=(Texture&& tex) noexcept {
@@ -92,14 +92,14 @@ Texture& Texture::operator=(Texture&& tex) noexcept {
 }
 
 bool Texture::loadPixels(unsigned char* pixels) {
-	SDL::glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-	return SDL::glGetError() == GL_NO_ERROR;
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+	return glGetError() == GL_NO_ERROR;
 }
 
-optional<SDL::GLenum> Texture::loadFromMaybe(SDL::SDL_Surface* imageOrig) {
+optional<GLenum> Texture::loadFromMaybe(SDL::SDL_Surface* imageOrig) {
   if (!texId) {
     texId = 0;
-    SDL::glGenTextures(1, &*texId);
+    glGenTextures(1, &*texId);
   }
   setParams(Filter::nearest, Wrapping::repeat);
   CHECK_OPENGL_ERROR();
@@ -109,25 +109,25 @@ optional<SDL::GLenum> Texture::loadFromMaybe(SDL::SDL_Surface* imageOrig) {
     if (image->format->Rmask == 0x000000ff)
       mode = GL_RGBA;
     else
-      mode = GL_BGRA;
+      mode = GL_RGBA;
   } else {
     if (image->format->Rmask == 0x000000ff)
       mode = GL_RGB;
     else
-      mode = GL_BGR;
+      mode = GL_RGB;
   }
-  SDL::glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  SDL::glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-  SDL::glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-  SDL::glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+  glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+  glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
   CHECK_OPENGL_ERROR();
-  SDL::glBindTexture(GL_TEXTURE_2D, *texId);
-  SDL::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image->w, image->h, 0, mode, GL_UNSIGNED_BYTE, image->pixels);
+  glBindTexture(GL_TEXTURE_2D, *texId);
+  glTexImage2D(GL_TEXTURE_2D, 0, mode, image->w, image->h, 0, mode, GL_UNSIGNED_BYTE, image->pixels);
   size = Vec2(imageOrig->w, imageOrig->h);
   realSize = Vec2(image->w, image->h);
   if (image != imageOrig)
     SDL::SDL_FreeSurface(image);
-  auto error = SDL::glGetError();
+  auto error = glGetError();
   if (error != GL_NO_ERROR)
     return error;
   return none;
@@ -144,10 +144,6 @@ optional<Texture> Texture::loadMaybe(const FilePath& path) {
     }
   }
   return none;
-}
-
-void Texture::addTexCoord(int x, int y) const {
-  SDL::glTexCoord2f((float)x / realSize.x, (float)y / realSize.y);
 }
 
 SDL::SDL_Surface* Texture::createSurface(int w, int h) {

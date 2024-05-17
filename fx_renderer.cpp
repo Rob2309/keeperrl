@@ -61,7 +61,7 @@ FXRenderer::~FXRenderer() {}
 
 void FXRenderer::applyTexScale() {
   auto& elements = drawBuffers->elements;
-  auto& texCoords = drawBuffers->texCoords;
+  auto& vertices = drawBuffers->vertices;
 
   for (auto& elem : elements) {
     auto scale = textureScales[textureIds[elem.texName]];
@@ -69,8 +69,10 @@ void FXRenderer::applyTexScale() {
       continue;
 
     int end = elem.firstVertex + elem.numVertices;
-    for (int i = elem.firstVertex; i < end; i++)
-      texCoords[i] *= scale;
+    for (int i = elem.firstVertex; i < end; i++) {
+      vertices[i].uv[0] *= scale.x;
+      vertices[i].uv[1] *= scale.y;
+    }
   }
 }
 
@@ -254,62 +256,72 @@ void FXRenderer::setView(float zoom, float offsetX, float offsetY, int w, int h)
 void FXRenderer::drawParticles(FVec2 viewOffset, Framebuffer& blendFBO, Framebuffer& addFBO) {
   PROFILE;
   int viewPortSize[4];
-  SDL::glGetIntegerv(GL_VIEWPORT, viewPortSize);
+  glGetIntegerv(GL_VIEWPORT, viewPortSize);
   IVec2 viewSize(blendFBO.width, blendFBO.height);
-  pushOpenglView();
+  auto prevMatrix = getMatrix();
 
   blendFBO.bind();
-  SDL::glPushAttrib(GL_ENABLE_BIT);
-  SDL::glDisable(GL_SCISSOR_TEST);
-  SDL::glEnable(GL_TEXTURE_2D);
-  glColor(Color::WHITE);
+
+  auto scissor = getScissor();
+  setScissor(false);
+  auto prevTex = getTexture();
+  setColor(Color::WHITE);
   setupOpenglView(blendFBO.width, blendFBO.height, 1.0f);
 
-  SDL::glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-  SDL::glClear(GL_COLOR_BUFFER_BIT);
-
-  SDL::glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+  clear(0.0f, 0.0f, 0.0f, 1.0f);
+  setBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
   drawParticles({1.0f, viewOffset, viewSize}, BlendMode::normal);
 
   addFBO.bind();
-  SDL::glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-  SDL::glClear(GL_COLOR_BUFFER_BIT);
+  clear(0.0f, 0.0f, 0.0f, 0.0f);
 
   // TODO: Each effect could control how alpha builds up
-  SDL::glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+  setBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
   drawParticles({1.0f, viewOffset, viewSize}, BlendMode::additive);
 
   Framebuffer::unbind();
-  SDL::glPopAttrib();
-  SDL::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  popOpenglView();
-  SDL::glViewport(viewPortSize[0], viewPortSize[1], viewPortSize[2], viewPortSize[3]);
+
+  bindTexture(prevTex);
+  setScissor(scissor);
+  setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  setMatrix(prevMatrix);
+  glViewport(viewPortSize[0], viewPortSize[1], viewPortSize[2], viewPortSize[3]);
 }
 
 static void drawTexturedQuad(const FRect& rect, const FRect& trect) {
-  SDL::glBegin(GL_QUADS);
-  SDL::glTexCoord2f(trect.x(), 1.0f - trect.ey());
-  SDL::glVertex2f(rect.x(), rect.ey());
-  SDL::glTexCoord2f(trect.ex(), 1.0f - trect.ey());
-  SDL::glVertex2f(rect.ex(), rect.ey());
-  SDL::glTexCoord2f(trect.ex(), 1.0f - trect.y());
-  SDL::glVertex2f(rect.ex(), rect.y());
-  SDL::glTexCoord2f(trect.x(), 1.0f - trect.y());
-  SDL::glVertex2f(rect.x(), rect.y());
-  SDL::glEnd();
+  setMode(GL_TRIANGLES);
+
+  auto vBase = getIndexBase();
+
+  setUv(trect.x(), 1.0f - trect.ey());
+  addVertex(rect.x(), rect.ey());
+  setUv(trect.ex(), 1.0f - trect.ey());
+  addVertex(rect.ex(), rect.ey());
+  setUv(trect.ex(), 1.0f - trect.y());
+  addVertex(rect.ex(), rect.y());
+  setUv(trect.x(), 1.0f - trect.y());
+  addVertex(rect.x(), rect.y());
+
+  addIndex(vBase + 0);
+  addIndex(vBase + 1);
+  addIndex(vBase + 2);
+  addIndex(vBase + 0);
+  addIndex(vBase + 2);
+  addIndex(vBase + 3);
 }
 
 void FXRenderer::drawOrdered(const int* ids, int count, float offsetX, float offsetY, Color color) {
   PROFILE;
-  bool wasInitialized = false;
-  auto initialize = [&] {
-    wasInitialized = true;
-    SDL::glPushAttrib(GL_ENABLE_BIT);
-    SDL::glDisable(GL_DEPTH_TEST);
-    SDL::glDisable(GL_CULL_FACE);
-    SDL::glEnable(GL_TEXTURE_2D);
-    glColor(color);
-  };
+
+  auto depthTest = getDepthTest();
+  setDepthTest(false);
+
+  auto cullFace = getCullFace();
+  setCullFace(false);
+
+  auto prevTex = getTexture();
+
+  setColor(color);
 
   if (useFramebuffer) {
     tempRects.clear();
@@ -334,13 +346,12 @@ void FXRenderer::drawOrdered(const int* ids, int count, float offsetX, float off
       tempRects.emplace_back(trect);
     }
     if (!tempRects.empty()) {
-      initialize();
       int defaultMode = 0, defaultCombine = 0;
-      SDL::glGetTexEnviv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, &defaultMode);
-      SDL::glGetTexEnviv(GL_TEXTURE_ENV, GL_COMBINE_RGB, &defaultCombine);
+      // glGetTexEnviv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, &defaultMode);
+      // glGetTexEnviv(GL_TEXTURE_ENV, GL_COMBINE_RGB, &defaultCombine);
 
-      SDL::glBlendFunc(GL_ONE, GL_SRC_ALPHA);
-      SDL::glBindTexture(GL_TEXTURE_2D, orderedBlendFBO->texId);
+      setBlendFunc(GL_ONE, GL_SRC_ALPHA);
+      bindTexture(orderedBlendFBO->texId);
 
       for (int n = 0; n < tempRects.size(); n += 2)
         drawTexturedQuad(tempRects[n], tempRects[n + 1]);
@@ -349,31 +360,30 @@ void FXRenderer::drawOrdered(const int* ids, int count, float offsetX, float off
       // - for high alpha values we're blending
       // - for low alpha values we're adding
       // For this to work nicely, additive textures need properly prepared alpha channel
-      SDL::glBindTexture(GL_TEXTURE_2D, orderedAddFBO->texId);
-      SDL::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      bindTexture(orderedAddFBO->texId);
+      setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
       // These states multiply alpha by itself
-      SDL::glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-      SDL::glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
-      SDL::glTexEnvi(GL_TEXTURE_ENV, GL_SRC0_ALPHA, GL_TEXTURE);
-      SDL::glTexEnvi(GL_TEXTURE_ENV, GL_SRC1_ALPHA, GL_TEXTURE);
-      SDL::glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-      SDL::glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+      // glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+      // glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+      // glTexEnvi(GL_TEXTURE_ENV, GL_SRC0_ALPHA, GL_TEXTURE);
+      // glTexEnvi(GL_TEXTURE_ENV, GL_SRC1_ALPHA, GL_TEXTURE);
+      // glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+      // glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
 
       for (int n = 0; n < tempRects.size(); n += 2)
         drawTexturedQuad(tempRects[n], tempRects[n + 1]);
 
       // Here we should really multiply by (1 - a), not (1 - a^2), but it looks better
-      SDL::glBlendFunc(GL_ONE_MINUS_SRC_ALPHA, GL_ONE);
+      setBlendFunc(GL_ONE_MINUS_SRC_ALPHA, GL_ONE);
 
       for (int n = 0; n < tempRects.size(); n += 2)
         drawTexturedQuad(tempRects[n], tempRects[n + 1]);
 
-      SDL::glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, defaultMode);
-      SDL::glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, defaultCombine);
+      // glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, defaultMode);
+      // glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, defaultCombine);
     }
   } else {
-    initialize();
     drawBuffers->clear();
     for (int n = 0; n < count; n++) {
       auto id = ids[n];
@@ -390,16 +400,17 @@ void FXRenderer::drawOrdered(const int* ids, int count, float offsetX, float off
     view.offset += FVec2(offsetX, offsetY);
 
     applyTexScale();
-    SDL::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     drawParticles(view, BlendMode::normal);
     // TODO: blend add support
-    SDL::glBlendFunc(GL_ONE, GL_ONE);
+    setBlendFunc(GL_ONE, GL_ONE);
     drawParticles(view, BlendMode::additive);
   }
-  if (wasInitialized) {
-    SDL::glPopAttrib();
-    SDL::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  }
+
+  bindTexture(prevTex);
+  setCullFace(cullFace);
+  setDepthTest(depthTest);
+  setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 void FXRenderer::drawUnordered(Layer layer) {
@@ -428,59 +439,62 @@ void FXRenderer::drawUnordered(Layer layer) {
 
   CHECK_OPENGL_ERROR();
 
-  SDL::glPushAttrib(GL_ENABLE_BIT);
-  SDL::glDisable(GL_DEPTH_TEST);
-  SDL::glDisable(GL_CULL_FACE);
-  SDL::glEnable(GL_TEXTURE_2D);
+  auto depthTest = getDepthTest();
+  auto cullFace = getCullFace();
+  auto prevTex = getTexture();
+  setDepthTest(false);
+  setCullFace(false);
 
   if (useFramebuffer && blendFBO && addFBO) {
     drawParticles(-FVec2(fboView.min() * nominalSize), *blendFBO, *addFBO);
-    glColor(Color::WHITE);
+    setColor(Color::WHITE);
 
     int defaultMode = 0, defaultCombine = 0;
-    SDL::glGetTexEnviv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, &defaultMode);
-    SDL::glGetTexEnviv(GL_TEXTURE_ENV, GL_COMBINE_RGB, &defaultCombine);
+    // glGetTexEnviv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, &defaultMode);
+    // glGetTexEnviv(GL_TEXTURE_ENV, GL_COMBINE_RGB, &defaultCombine);
 
     // TODO: positioning is wrong for non-integral zoom values
     FVec2 c1 = FVec2(fboView.min() * nominalSize * worldView.zoom) + worldView.offset;
     FVec2 c2 = FVec2(fboView.max() * nominalSize * worldView.zoom) + worldView.offset;
 
-    SDL::glBlendFunc(GL_ONE, GL_SRC_ALPHA);
-    SDL::glBindTexture(GL_TEXTURE_2D, blendFBO->texId);
-    glQuad(c1.x, c1.y, c2.x, c2.y);
+    setBlendFunc(GL_ONE, GL_SRC_ALPHA);
+    bindTexture(blendFBO->texId);
+    addQuad(c1.x, c1.y, c2.x, c2.y);
 
     // Here we're performing blend-add:
     // - for high alpha values we're blending
     // - for low alpha values we're adding
     // For this to work nicely, additive textures need properly prepared alpha channel
-    SDL::glBindTexture(GL_TEXTURE_2D, addFBO->texId);
-    SDL::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    bindTexture(addFBO->texId);
+    setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // These states multiply alpha by itself
-    SDL::glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-    SDL::glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
-    SDL::glTexEnvi(GL_TEXTURE_ENV, GL_SRC0_ALPHA, GL_TEXTURE);
-    SDL::glTexEnvi(GL_TEXTURE_ENV, GL_SRC1_ALPHA, GL_TEXTURE);
-    SDL::glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-    SDL::glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
-    glQuad(c1.x, c1.y, c2.x, c2.y);
+    // glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+    // glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+    // glTexEnvi(GL_TEXTURE_ENV, GL_SRC0_ALPHA, GL_TEXTURE);
+    // glTexEnvi(GL_TEXTURE_ENV, GL_SRC1_ALPHA, GL_TEXTURE);
+    // glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+    // glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+    addQuad(c1.x, c1.y, c2.x, c2.y);
 
     // Here we should really multiply by (1 - a), not (1 - a^2), but it looks better
-    SDL::glBlendFunc(GL_ONE_MINUS_SRC_ALPHA, GL_ONE);
-    glQuad(c1.x, c1.y, c2.x, c2.y);
+    setBlendFunc(GL_ONE_MINUS_SRC_ALPHA, GL_ONE);
+    addQuad(c1.x, c1.y, c2.x, c2.y);
 
-    SDL::glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, defaultMode);
-    SDL::glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, defaultCombine);
+    // glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, defaultMode);
+    // glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, defaultCombine);
   } else {
-    SDL::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     drawParticles(worldView, BlendMode::normal);
     // TODO: blend add support
-    SDL::glBlendFunc(GL_ONE, GL_ONE);
+    setBlendFunc(GL_ONE, GL_ONE);
     drawParticles(worldView, BlendMode::additive);
   }
 
-  SDL::glPopAttrib();
-  SDL::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  bindTexture(prevTex);
+  setCullFace(cullFace);
+  setDepthTest(depthTest);
+  setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   CHECK_OPENGL_ERROR();
 }
 
@@ -498,33 +512,23 @@ IVec2 FXRenderer::fboSize() const {
 
 void FXRenderer::drawParticles(const View& view, BlendMode blendMode) {
   PROFILE;
-  SDL::glPushMatrix();
+  auto prevMatrix = getMatrix();
+  auto prevTex = getTexture();
 
-  SDL::glTranslatef(view.offset.x, view.offset.y, 0.0f);
-  SDL::glScalef(view.zoom, view.zoom, 1.0f);
+  setMatrix(prevMatrix * Mat4::translation(view.offset.x, view.offset.y, 0.0f) * Mat4::scale(view.zoom, view.zoom, 1.0f));
 
-  SDL::glPushAttrib(GL_ENABLE_BIT);
-  SDL::glEnableClientState(GL_VERTEX_ARRAY);
-  SDL::glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-  SDL::glEnableClientState(GL_COLOR_ARRAY);
-
-  SDL::glVertexPointer(2, GL_FLOAT, 0, drawBuffers->positions.data());
-  SDL::glTexCoordPointer(2, GL_FLOAT, 0, drawBuffers->texCoords.data());
-  SDL::glColorPointer(4, GL_UNSIGNED_BYTE, 0, drawBuffers->colors.data());
+  setMode(GL_TRIANGLES);
 
   for (auto& elem : drawBuffers->elements) {
     auto& tdef = mgr[elem.texName];
     if (tdef.blendMode != blendMode)
       continue;
     auto& tex = textures[textureIds[elem.texName]];
-    SDL::glBindTexture(GL_TEXTURE_2D, *tex.getTexId());
-    SDL::glDrawArrays(GL_QUADS, elem.firstVertex, elem.numVertices);
+    bindTexture(*tex.getTexId());
+    addVertices(drawBuffers->vertices.data() + elem.firstVertex, elem.numVertices);
   }
 
-  SDL::glDisableClientState(GL_VERTEX_ARRAY);
-  SDL::glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-  SDL::glDisableClientState(GL_COLOR_ARRAY);
-  SDL::glPopAttrib();
-  SDL::glPopMatrix();
+  bindTexture(prevTex);
+  setMatrix(prevMatrix);
 }
 }

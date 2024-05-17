@@ -3,8 +3,43 @@
 #include "util.h"
 #include "color.h"
 
-using SDL::GLenum;
-using SDL::GLuint;
+static auto g_VertexShaderSource = R"(#version 330 core
+  layout(location = 0) in vec2 in_Position;
+  layout(location = 1) in vec2 in_UV;
+  layout(location = 2) in vec4 in_Color;
+
+  uniform mat4 u_ProjectionMatrix;
+
+  out vec2 v2f_UV;
+  out vec4 v2f_Color;
+
+  void main() {
+    gl_Position = u_ProjectionMatrix * vec4(in_Position, 0.0, 1.0);
+    v2f_UV = in_UV;
+    v2f_Color = in_Color;
+  }
+)";
+static auto g_FragmentShaderSource = R"(#version 330 core
+  in vec2 v2f_UV;
+  in vec4 v2f_Color;
+
+  uniform sampler2D u_Texture;
+
+  layout(location = 0) out vec4 out_Color;
+
+  void main() {
+    out_Color = v2f_Color * texture(u_Texture, v2f_UV);
+  }
+)";
+
+static GLuint g_Program;
+static GLint g_LocProjectionMatrix;
+
+static GLuint g_VAO;
+static GLuint g_VBO;
+static GLuint g_IBO;
+
+static GLuint g_WhiteTexture;
 
 const char* openglErrorCode(GLenum code) {
   switch (code) {
@@ -26,10 +61,74 @@ const char* openglErrorCode(GLenum code) {
 }
 
 void checkOpenglError(const char* file, int line) {
-  auto error = SDL::glGetError();
+  auto error = glGetError();
   if (error != GL_NO_ERROR)
     FatalLog.get() << "FATAL " << file << ":" << line << " "
                    << "OpenGL error: " << openglErrorCode(error) << " (" << error << ")";
+}
+
+GLuint createShader(GLenum type, const char* src) {
+  auto shader = glCreateShader(type);
+  glShaderSource(shader, 1, &src, nullptr);
+  glCompileShader(shader);
+  GLint err;
+  glGetShaderiv(shader, GL_COMPILE_STATUS, &err);
+  if(err != GL_TRUE) {
+    GLint len;
+    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &len);
+    auto msg = new char[len];
+    glGetShaderInfoLog(shader, len, nullptr, msg);
+    FATAL << "OpenGL " << (type == GL_VERTEX_SHADER ? "vertex " : "fragment ") << "shader error: " << msg;
+    delete[] msg;
+  }
+  return shader;
+}
+
+void checkProgram(GLuint program, GLenum flag) {
+  GLint err;
+  glGetProgramiv(g_Program, flag, &err);
+  if(err != GL_TRUE) {
+    GLint len;
+    glGetProgramiv(program, GL_INFO_LOG_LENGTH, &len);
+    auto msg = new char[len];
+    glGetProgramInfoLog(program, len, nullptr, msg);
+    FATAL << "OpenGL program error: " << msg;
+    delete[] msg;
+  }
+}
+
+void initializeGl(GLADloadproc getProcAddr) {
+  gladLoadGLLoader(getProcAddr);
+
+  auto vShader = createShader(GL_VERTEX_SHADER, g_VertexShaderSource);
+  auto fShader = createShader(GL_FRAGMENT_SHADER, g_FragmentShaderSource);
+
+  g_Program = glCreateProgram();
+  glAttachShader(g_Program, vShader);
+  glAttachShader(g_Program, fShader);
+  glLinkProgram(g_Program);
+  checkProgram(g_Program, GL_LINK_STATUS);
+  glValidateProgram(g_Program);
+  checkProgram(g_Program, GL_VALIDATE_STATUS);
+
+  g_LocProjectionMatrix = glGetUniformLocation(g_Program, "u_ProjectionMatrix");
+
+  glUseProgram(g_Program);
+
+  glGenVertexArrays(1, &g_VAO);
+  glGenBuffers(1, &g_VBO);
+  glGenBuffers(1, &g_IBO);
+
+  glGenTextures(1, &g_WhiteTexture);
+  glBindTexture(GL_TEXTURE_2D, g_WhiteTexture);
+  GLubyte pixel[4] { 255, 255, 255, 255 };
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+  CHECK_OPENGL_ERROR();
 }
 
 static const char* debugSourceText(GLenum source) {
@@ -88,8 +187,8 @@ enum class OpenglVendor { nvidia, amd, intel, unknown };
 
 static OpenglVendor s_vendor = OpenglVendor::unknown;
 
-static void APIENTRY debugOutputCallback(GLenum source, GLenum type, GLuint id, GLenum severity, SDL::GLsizei length,
-                                         const SDL::GLchar* message, const void* userParam) {
+static void APIENTRY debugOutputCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
+                                         const GLchar* message, const void* userParam) {
   // TODO: ignore non-significant error/warning codes
   if (s_vendor == OpenglVendor::nvidia) {
     // Description of messages:
@@ -114,7 +213,7 @@ bool installOpenglDebugHandler() {
     return properlyInitialized;
   isInitialized = true;
 
-  auto vendor = toLower((const char*)SDL::glGetString(GL_VENDOR));
+  auto vendor = toLower((const char*)glGetString(GL_VENDOR));
   if (vendor.find("intel") != string::npos)
     s_vendor = OpenglVendor::intel;
   else if (vendor.find("nvidia") != string::npos)
@@ -123,11 +222,11 @@ bool installOpenglDebugHandler() {
     s_vendor = OpenglVendor::amd;
 
   if (isOpenglExtensionAvailable("KHR_debug")) {
-    SDL::glEnable(GL_DEBUG_OUTPUT);
-    SDL::glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-    SDL::glDebugMessageCallback(debugOutputCallback, nullptr);
-    SDL::glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
-    SDL::glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+    glDebugMessageCallback(debugOutputCallback, nullptr);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
     properlyInitialized = true;
     return true;
   }
@@ -137,109 +236,385 @@ bool installOpenglDebugHandler() {
 }
 
 bool isOpenglExtensionAvailable(const char* text) {
-  auto* exts = (const char*)SDL::glGetString(GL_EXTENSIONS);
+  auto* exts = (const char*)glGetString(GL_EXTENSIONS);
   return strstr(exts, text) != nullptr;
 }
 
 void setupOpenglView(int width, int height, float zoom) {
-  SDL::glMatrixMode(GL_PROJECTION);
-  SDL::glLoadIdentity();
-  SDL::glViewport(0, 0, width, height);
-  SDL::glOrtho(0.0, double(width) / zoom, double(height) / zoom, 0.0, -1.0, 1.0);
+  setMatrix(Mat4::ortho(0.0f, (float)width / zoom, (float)height / zoom, 0.0f, -1.0f, 1.0f));
+  glViewport(0, 0, width, height);
   CHECK_OPENGL_ERROR();
-
-  SDL::glMatrixMode(GL_MODELVIEW);
-  SDL::glLoadIdentity();
 }
 
-void pushOpenglView() {
-  SDL::glPushAttrib(GL_VIEWPORT_BIT);
-  SDL::glMatrixMode(GL_PROJECTION);
-  SDL::glPushMatrix();
-  SDL::glMatrixMode(GL_MODELVIEW);
-  SDL::glPushMatrix();
-}
-
-void popOpenglView() {
-  SDL::glPopAttrib();
-  SDL::glMatrixMode(GL_PROJECTION);
-  SDL::glPopMatrix();
-  SDL::glMatrixMode(GL_MODELVIEW);
-  SDL::glPopMatrix();
-}
-
-void glColor(const Color& col) {
-  SDL::glColor4f((float)col.r / 255, (float)col.g / 255, (float)col.b / 255, (float)col.a / 255);
-}
-
-void glQuad(float x, float y, float ex, float ey) {
-  SDL::glBegin(GL_QUADS);
-  SDL::glTexCoord2f(0.0f, 0.0f), SDL::glVertex2f(x, ey);
-  SDL::glTexCoord2f(1.0f, 0.0f), SDL::glVertex2f(ex, ey);
-  SDL::glTexCoord2f(1.0f, 1.0f), SDL::glVertex2f(ex, y);
-  SDL::glTexCoord2f(0.0f, 1.0f), SDL::glVertex2f(x, y);
-  SDL::glEnd();
-}
-
-#if defined(WINDOWS)
-void *winLoadFunction(const char *name) {
-  auto ret = SDL::SDL_GL_GetProcAddress(name);
-  //USER_CHECK(!!ret) << "Unable to load OpenGL function: " << name << ". Please update your video card driver.";
-  return ret;
-}
-
-#define EXT_ENTRY __stdcall
-namespace SDL {
-  void(EXT_ENTRY *glDeleteFramebuffers)(GLsizei n, const GLuint *framebuffers);
-  void(EXT_ENTRY *glGenFramebuffers)(GLsizei n, GLuint *framebuffers);
-  void(EXT_ENTRY *glBindFramebuffer)(GLenum target, GLuint framebuffer);
-  void(EXT_ENTRY *glFramebufferTexture2D)(GLenum target, GLenum attachment, GLenum textarget,
-      GLuint texture, GLint level);
-  void(EXT_ENTRY *glDrawBuffers)(GLsizei n, const GLenum *bufs);
-  GLenum(EXT_ENTRY *glCheckFramebufferStatus)(GLenum target);
-
-  void(EXT_ENTRY* glBlendFuncSeparate)(GLenum, GLenum, GLenum, GLenum);
-
-  void(EXT_ENTRY *glDebugMessageCallback)(GLDEBUGPROC callback, const void *userParam);
-  void(EXT_ENTRY *glDebugMessageControl)(GLenum source, GLenum type, GLenum severity,
-      GLsizei count, const GLuint *ids, GLboolean enabled);
-}
-
-#endif
+// void glColor(const Color& col) {
+//   glColor4f((float)col.r / 255, (float)col.g / 255, (float)col.b / 255, (float)col.a / 255);
+// }
 
 bool isOpenglFeatureAvailable(OpenglFeature feature) {
-#if defined(WINDOWS)
-#define ON_WINDOWS(check) check
-#else
-#define ON_WINDOWS(check)
-#endif
   switch (feature) {
   case OpenglFeature::FRAMEBUFFER: // GL 3.0
-    return ON_WINDOWS(SDL::glDeleteFramebuffers && SDL::glGenFramebuffers && SDL::glBindFramebuffer &&
-                      SDL::glFramebufferTexture2D && SDL::glDrawBuffers && SDL::glCheckFramebufferStatus &&)
+    return glDeleteFramebuffers && glGenFramebuffers && glBindFramebuffer &&
+                      glFramebufferTexture2D && glDrawBuffers && glCheckFramebufferStatus &&
         isOpenglExtensionAvailable("ARB_framebuffer_object");
   case OpenglFeature::SEPARATE_BLEND_FUNC: // GL 1.4
-    return ON_WINDOWS(SDL::glBlendFuncSeparate &&) true;
+    return glBlendFuncSeparate;
   case OpenglFeature::DEBUG: // GL 4.4
-    return ON_WINDOWS(SDL::glDebugMessageCallback && SDL::glDebugMessageControl &&)
+    return glDebugMessageCallback && glDebugMessageControl &&
         isOpenglExtensionAvailable("KHR_debug");
   }
 #undef ON_WINDOWS
 }
 
-void initializeGLExtensions() {
-#if defined(WINDOWS)
-#define LOAD(func) SDL::func = (decltype(SDL::func))winLoadFunction(#func);
-  LOAD(glBindFramebuffer);
-  LOAD(glDeleteFramebuffers);
-  LOAD(glGenFramebuffers);
-  LOAD(glCheckFramebufferStatus);
-  LOAD(glFramebufferTexture2D);
-  LOAD(glDrawBuffers);
-  LOAD(glBlendFuncSeparate);
-  LOAD(glDebugMessageCallback);
-  LOAD(glDebugMessageControl);
-#undef LOAD
-#endif
+struct DrawCommand {
+  enum class Command {
+    EnableBlend,
+    EnableScissor,
+    EnableDepthTest,
+    EnableCullFace,
+    SetScissorRect,
+    SetDepthFunc,
+    SetBlendFunc,
+    SetBlendFuncSeparate,
+    SetLineWidth,
+    SetPointSize,
+    SetMatrix,
+    BindTexture,
+    BindFramebuffer,
+    Clear,
+    Draw,
+  } command;
+  union DrawData {
+    bool enable;
+    struct ScissorRect {
+      int x, y, w, h;
+    } scissorRect;
+    GLenum depthFunc;
+    struct BlendFunc {
+      GLenum src;
+      GLenum dst;
+    } blendFunc;
+    struct BlendFuncSeparate {
+      GLenum srcRgb;
+      GLenum dstRgb;
+      GLenum srcA;
+      GLenum dstA;
+    } blendFuncSeparate;
+    float lineWidth;
+    float pointSize;
+    Mat4 matrix;
+    GLuint texture;
+    GLuint framebuffer;
+    struct Clear {
+      bool depth;
+      float r, g, b, a;
+    } clear;
+    struct Draw {
+      GLenum mode;
+      size_t start;
+      size_t count;
+    } draw;
+  } data;
+
+  DrawCommand() : command{Command::Draw}, data{false} { }
+};
+
+static std::vector<Vertex> g_Vertices;
+static std::vector<GLuint> g_Indices;
+static std::vector<DrawCommand> g_DrawCommands;
+
+static size_t g_CurrentIndexStart;
+static GLenum g_CurrentMode;
+static Mat4 g_CurrentMatrix;
+static bool g_BlendEnabled;
+static bool g_ScissorEnabled;
+static bool g_DepthTestEnabled;
+static bool g_CullFaceEnabled;
+static GLuint g_CurrentTexture;
+static Color g_CurrentColor;
+static float g_CurrentUv[2];
+
+static size_t g_VBOSize = 0;
+static size_t g_IBOSize = 0;
+
+static void flushDrawcall() {
+  if(g_CurrentIndexStart < g_Indices.size()) {
+    DrawCommand cmd; 
+    cmd.command = DrawCommand::Command::Draw;
+    cmd.data.draw = DrawCommand::DrawData::Draw { g_CurrentMode, g_CurrentIndexStart, g_Indices.size() - g_CurrentIndexStart };
+    g_DrawCommands.push_back(cmd);
+    g_CurrentIndexStart = g_Indices.size();
+  }
 }
 
+void setMatrix(Mat4 m) {
+  flushDrawcall();
+  g_CurrentMatrix = m;
+  DrawCommand cmd;
+  cmd.command = DrawCommand::Command::SetMatrix;
+  cmd.data.matrix = m;
+  g_DrawCommands.push_back(cmd);
+}
+Mat4 getMatrix() {
+  return g_CurrentMatrix;
+}
+
+bool getBlend() {
+  return g_BlendEnabled;
+}
+void setBlend(bool enabled) {
+  if(enabled != g_BlendEnabled) {
+    flushDrawcall();
+    g_BlendEnabled = enabled;
+    DrawCommand cmd;
+    cmd.command = DrawCommand::Command::EnableBlend;
+    cmd.data.enable = enabled;
+    g_DrawCommands.push_back(cmd);
+  }
+}
+
+bool getScissor() {
+  return g_ScissorEnabled;
+}
+void setScissor(bool enabled) {
+  if(g_ScissorEnabled != enabled) {
+    flushDrawcall();
+    g_ScissorEnabled = enabled;
+    DrawCommand cmd;
+    cmd.command = DrawCommand::Command::EnableScissor;
+    cmd.data.enable = enabled;
+    g_DrawCommands.push_back(cmd);
+  }
+}
+void setScissorRect(int x, int y, int w, int h) {
+  flushDrawcall();
+  DrawCommand cmd;
+  cmd.command = DrawCommand::Command::SetScissorRect;
+  cmd.data.scissorRect = DrawCommand::DrawData::ScissorRect { x, y, w, h };
+  g_DrawCommands.push_back(cmd);
+}
+
+bool getDepthTest() {
+  return g_DepthTestEnabled;
+}
+void setDepthTest(bool enabled) {
+  if(enabled != g_DepthTestEnabled) {
+    flushDrawcall();
+    g_DepthTestEnabled = enabled;
+    DrawCommand cmd;
+    cmd.command = DrawCommand::Command::EnableDepthTest;
+    cmd.data.enable = enabled;
+    g_DrawCommands.push_back(cmd);
+  }
+}
+void setDepthFunc(GLenum func) {
+  flushDrawcall();
+  DrawCommand cmd;
+  cmd.command = DrawCommand::Command::SetDepthFunc;
+  cmd.data.depthFunc = func;
+  g_DrawCommands.push_back(cmd);
+}
+
+bool getCullFace() {
+  return g_CullFaceEnabled;
+}
+void setCullFace(bool enabled) {
+  if(enabled != g_CullFaceEnabled) {
+    flushDrawcall();
+    g_CullFaceEnabled = enabled;
+    DrawCommand cmd;
+    cmd.command = DrawCommand::Command::EnableCullFace;
+    cmd.data.enable = enabled;
+    g_DrawCommands.push_back(cmd);
+  }
+}
+
+void setLineWidth(float w) {
+  flushDrawcall();
+  DrawCommand cmd;
+  cmd.command = DrawCommand::Command::SetLineWidth;
+  cmd.data.lineWidth = w;
+  g_DrawCommands.push_back(cmd);
+}
+void setPointSize(float s) {
+  flushDrawcall();
+  DrawCommand cmd;
+  cmd.command = DrawCommand::Command::SetPointSize;
+  cmd.data.pointSize = s;
+  g_DrawCommands.push_back(cmd);
+}
+
+void bindTexture(GLuint tex) {
+  if(tex == 0)
+    tex = g_WhiteTexture;
+  if(tex != g_CurrentTexture) {
+    flushDrawcall();
+    g_CurrentTexture = tex;
+    DrawCommand cmd;
+    cmd.command = DrawCommand::Command::BindTexture;
+    cmd.data.texture = tex;
+    g_DrawCommands.push_back(cmd);
+  }
+}
+GLuint getTexture() {
+  return g_CurrentTexture;
+}
+
+void bindFramebuffer(GLuint fb) {
+  flushDrawcall();
+  DrawCommand cmd;
+  cmd.command = DrawCommand::Command::BindFramebuffer;
+  cmd.data.framebuffer = fb;
+  g_DrawCommands.push_back(cmd);
+}
+
+void setMode(GLenum mode) {
+  if(mode != g_CurrentMode) {
+    flushDrawcall();
+    g_CurrentMode = mode;
+  }
+}
+
+void setColor(const Color& c) {
+  g_CurrentColor = c;
+}
+
+void setUv(float u, float v) {
+  g_CurrentUv[0] = u;
+  g_CurrentUv[1] = v;
+}
+void addVertex(float x, float y, float z) {
+  g_Vertices.push_back(Vertex { { x, y }, { g_CurrentUv[0], g_CurrentUv[1] }, { g_CurrentColor.r, g_CurrentColor.g, g_CurrentColor.b, g_CurrentColor.a } });
+}
+void addQuad(float x, float y, float ex, float ey) {
+  setMode(GL_TRIANGLES);
+
+  auto vBase = g_Vertices.size();
+
+  g_Vertices.push_back(Vertex { { x, ey }, { 0.0f, 0.0f }, { g_CurrentColor.r, g_CurrentColor.g, g_CurrentColor.b, g_CurrentColor.a } });
+  g_Vertices.push_back(Vertex { { ex, ey }, { 1.0f, 0.0f }, { g_CurrentColor.r, g_CurrentColor.g, g_CurrentColor.b, g_CurrentColor.a } });
+  g_Vertices.push_back(Vertex { { ex, y }, { 1.0f, 1.0f }, { g_CurrentColor.r, g_CurrentColor.g, g_CurrentColor.b, g_CurrentColor.a } });
+  g_Vertices.push_back(Vertex { { x, y }, { 0.0f, 1.0f }, { g_CurrentColor.r, g_CurrentColor.g, g_CurrentColor.b, g_CurrentColor.a } });
+
+  g_Indices.push_back(vBase + 0);
+  g_Indices.push_back(vBase + 1);
+  g_Indices.push_back(vBase + 2);
+
+  g_Indices.push_back(vBase + 0);
+  g_Indices.push_back(vBase + 2);
+  g_Indices.push_back(vBase + 3);
+}
+void addVertices(Vertex* vertex, size_t count) {
+  auto vBase = g_Vertices.size();
+
+  g_Vertices.insert(g_Vertices.end(), vertex, vertex + count);
+  
+  g_Indices.reserve(g_Indices.size() + count);
+  for(int i = 0; i < count; i++) {
+    g_Indices.push_back(vBase + i);
+  }
+}
+
+GLuint getIndexBase() {
+  return g_Vertices.size();
+}
+void addIndex(GLuint index) {
+  g_Indices.push_back(index);
+}
+
+void clear(float r, float g, float b, float a, bool depth) {
+  flushDrawcall();
+
+  DrawCommand cmd;
+  cmd.command = DrawCommand::Command::Clear;
+  cmd.data.clear = DrawCommand::DrawData::Clear { depth, r, g, b, a };
+  g_DrawCommands.push_back(cmd);
+}
+
+void setBlendFunc(GLenum src, GLenum dest) {
+  flushDrawcall();
+
+  DrawCommand cmd;
+  cmd.command = DrawCommand::Command::SetBlendFunc;
+  cmd.data.blendFunc = DrawCommand::DrawData::BlendFunc { src, dest };
+  g_DrawCommands.push_back(cmd);
+}
+void setBlendFuncSeparate(GLenum srcRgb, GLenum destRgb, GLenum srcA, GLenum dstA) {
+  flushDrawcall();
+
+  DrawCommand cmd;
+  cmd.command = DrawCommand::Command::SetBlendFuncSeparate;
+  cmd.data.blendFuncSeparate = DrawCommand::DrawData::BlendFuncSeparate { srcRgb, destRgb, srcA, dstA };
+  g_DrawCommands.push_back(cmd);
+}
+
+static void enableFeature(GLenum feature, bool enable) {
+  if(enable)
+    glEnable(feature);
+  else
+    glDisable(feature);
+}
+
+void emitDrawcalls() {
+  if(!g_DrawCommands.empty()) {
+    glBindVertexArray(g_VAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+    if(g_VBOSize >= g_Vertices.size())
+      glBufferSubData(GL_ARRAY_BUFFER, 0, g_Vertices.size() * sizeof(Vertex), g_Vertices.data());
+    else {
+      glBufferData(GL_ARRAY_BUFFER, g_Vertices.size() * sizeof(Vertex), g_Vertices.data(), GL_DYNAMIC_DRAW);
+      g_VBOSize = g_Vertices.size();
+    }
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_IBO);
+    if(g_IBOSize >= g_Indices.size())
+      glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, g_Indices.size() * sizeof(GLuint), g_Indices.data());
+    else {
+      glBufferData(GL_ELEMENT_ARRAY_BUFFER, g_Indices.size() * sizeof(GLuint), g_Indices.data(), GL_DYNAMIC_DRAW);
+      g_IBOSize = g_Indices.size();
+    }
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)8);
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)16);
+
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+
+    glUseProgram(g_Program);
+
+    for(const auto& cmd : g_DrawCommands) {
+      switch(cmd.command) {
+        case DrawCommand::Command::EnableBlend: enableFeature(GL_BLEND, cmd.data.enable); break;
+        case DrawCommand::Command::EnableScissor: enableFeature(GL_SCISSOR_TEST, cmd.data.enable); break;
+        case DrawCommand::Command::EnableDepthTest: enableFeature(GL_DEPTH_TEST, cmd.data.enable); break;
+        case DrawCommand::Command::EnableCullFace: enableFeature(GL_CULL_FACE, cmd.data.enable); break;
+        case DrawCommand::Command::SetScissorRect: glScissor(cmd.data.scissorRect.x, cmd.data.scissorRect.y, cmd.data.scissorRect.w, cmd.data.scissorRect.h); break;
+        case DrawCommand::Command::SetDepthFunc: glDepthFunc(cmd.data.depthFunc); break;
+        case DrawCommand::Command::SetBlendFunc: glBlendFunc(cmd.data.blendFunc.src, cmd.data.blendFunc.dst); break;
+        case DrawCommand::Command::SetBlendFuncSeparate: glBlendFuncSeparate(cmd.data.blendFuncSeparate.srcRgb, cmd.data.blendFuncSeparate.dstRgb, cmd.data.blendFuncSeparate.srcA, cmd.data.blendFuncSeparate.dstA); break;
+        case DrawCommand::Command::SetLineWidth: glLineWidth(cmd.data.lineWidth); break;
+        case DrawCommand::Command::SetPointSize: glPointSize(cmd.data.pointSize); break;
+        case DrawCommand::Command::SetMatrix: glUniformMatrix4fv(g_LocProjectionMatrix, 1, GL_FALSE, cmd.data.matrix.data); break;
+        case DrawCommand::Command::BindTexture: glBindTexture(GL_TEXTURE_2D, cmd.data.texture); break;
+        case DrawCommand::Command::BindFramebuffer: glBindFramebuffer(GL_FRAMEBUFFER, cmd.data.framebuffer); break;
+        case DrawCommand::Command::Clear: 
+          {
+            GLbitfield mask = GL_COLOR_BUFFER_BIT;
+            if(cmd.data.clear.depth)
+              mask |= GL_DEPTH_BUFFER_BIT;
+            glClearColor(cmd.data.clear.r, cmd.data.clear.g, cmd.data.clear.b, cmd.data.clear.a);
+            glClear(mask);
+          }
+          break;
+        case DrawCommand::Command::Draw: glDrawElements(cmd.data.draw.mode, cmd.data.draw.count, GL_UNSIGNED_INT, (void*)(cmd.data.draw.start * sizeof(GLuint))); break;
+      }
+    }
+  }
+
+  g_Vertices.clear();
+  g_Indices.clear();
+  g_DrawCommands.clear();
+  g_CurrentIndexStart = 0;
+}

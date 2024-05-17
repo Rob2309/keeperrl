@@ -33,7 +33,7 @@ class Texture {
   ~Texture();
 
   static optional<Texture> loadMaybe(const FilePath&);
-  optional<SDL::GLenum> loadFromMaybe(SDL::SDL_Surface*);
+  optional<GLenum> loadFromMaybe(SDL::SDL_Surface*);
   bool loadPixels(unsigned char* pixels);
 
   Vec2 getSize() const {
@@ -42,7 +42,7 @@ class Texture {
   Vec2 getRealSize() const {
     return realSize;
   }
-  const optional<SDL::GLuint>& getTexId() const {
+  const optional<GLuint>& getTexId() const {
     return texId;
   }
   const optional<FilePath>& getPath() const {
@@ -58,10 +58,9 @@ class Texture {
 
   private:
   Texture();
-  void addTexCoord(int x, int y) const;
 
   // When texId != none, it's always > 0
-  optional<SDL::GLuint> texId;
+  optional<GLuint> texId;
   Vec2 size;
   Vec2 realSize;
   optional<FilePath> path;

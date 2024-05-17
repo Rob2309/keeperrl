@@ -1,28 +1,10 @@
 #pragma once
 
-#if defined(WINDOWS) && defined(_MSC_VER)
-#ifndef _WINDOWS_
-#define _WINDOWS_
-#define APIENTRY __stdcall
-#define WINGDIAPI __declspec(dllimport)
-#endif
-#elif defined(WINDOWS)
-#ifndef _WINDOWS_
-#define _WINDOWS_
-#define APIENTRY __attribute__((__stdcall__))
-#define WINGDIAPI __attribute__((dllimport))
-#endif
-#else
-#define GL_GLEXT_PROTOTYPES 1
-#endif
-
 #include "stdafx.h"
 
 namespace SDL {
 #include <SDL2/SDL.h>
 #include <SDL_image.h>
-#include <SDL2/SDL_opengl.h>
-#include <SDL2/SDL_opengl_glext.h>
 }
 
 #undef TECHNOLOGY

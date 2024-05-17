@@ -50,8 +50,6 @@ FetchContent_Declare(VORBIS GIT_REPOSITORY https://github.com/xiph/vorbis GIT_TA
 FetchContent_Declare(THEORA GIT_REPOSITORY https://github.com/xiph/theora GIT_TAG v1.2.0alpha1 EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(SDL2 SDL2_image CURL ZLIB OGG VORBIS THEORA ${ALSOFT_DECL})
 
-find_package(OpenGL REQUIRED)
-
 add_library(
     theoradec
     "${theora_SOURCE_DIR}/lib/apiwrapper.c"
@@ -75,14 +73,14 @@ configure_file(
     @ONLY
 )
 
-file(GLOB KEEPER_SOURCES "*.cpp" "extern/*.cpp")
+file(GLOB KEEPER_SOURCES "*.cpp" "extern/*.cpp" "extern/glad/src/*.cpp")
 add_executable(
     keeper
     ${KEEPER_SOURCES}
     ${KEEPER_VERSION_H}
 )
 target_include_directories(keeper PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(keeper PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/extern)
+target_include_directories(keeper PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/extern ${CMAKE_CURRENT_SOURCE_DIR}/extern/glad/include)
 target_include_directories(keeper PRIVATE ${sdl2_image_SOURCE_DIR}/include ${theora_SOURCE_DIR}/include ${OPENAL_INCLUDE_DIR})
 target_link_libraries(
     keeper
@@ -96,7 +94,6 @@ target_link_libraries(
     vorbis
     vorbisfile
     theoradec
-    OpenGL::GL
     ${OPENAL_LIBRARY}
 )
 target_precompile_headers(keeper PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/stdafx.h")

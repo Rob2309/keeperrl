@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fx_base.h"
+#include "vertex.h"
 
 namespace fx {
 
@@ -18,9 +19,7 @@ struct DrawBuffers {
     return elements.empty();
   }
 
-  vector<FVec2> positions;
-  vector<FVec2> texCoords;
-  vector<unsigned int> colors;
+  vector<Vertex> vertices;
 
   // TODO: group elements by TextureName
   vector<Element> elements;

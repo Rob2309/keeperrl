@@ -1,13 +1,17 @@
 #pragma once
 
-#include "sdl.h"
+#include <glad/glad.h>
+#include "matrix.h"
+#include "vertex.h"
 
 struct Color;
 
 // TODO: consistent naming
-const char* openglErrorCode(SDL::GLenum code);
+const char* openglErrorCode(GLenum code);
 void checkOpenglError(const char* file, int line);
 #define CHECK_OPENGL_ERROR() checkOpenglError(__FILE__, __LINE__)
+
+void initializeGl(GLADloadproc getProcAddr);
 
 // This is very useful for debugging OpenGL-related errors
 bool installOpenglDebugHandler();
@@ -15,38 +19,48 @@ bool installOpenglDebugHandler();
 bool isOpenglExtensionAvailable(const char*);
 
 void setupOpenglView(int width, int height, float zoom);
-void pushOpenglView();
-void popOpenglView();
-void glColor(const Color&);
-void glQuad(float x, float y, float ex, float ey);
-void initializeGLExtensions();
 
 enum class OpenglFeature { FRAMEBUFFER, SEPARATE_BLEND_FUNC, DEBUG };
 bool isOpenglFeatureAvailable(OpenglFeature);
 
-#if defined(WINDOWS)
+void setMatrix(Mat4 m);
+Mat4 getMatrix();
 
-namespace SDL {
-#define EXT_ENTRY __stdcall
-#define EXT_API extern
+bool getBlend();
+void setBlend(bool enabled);
 
-extern "C" {
-EXT_API void(EXT_ENTRY *glDeleteFramebuffers)(GLsizei n, const GLuint *framebuffers);
-EXT_API void(EXT_ENTRY *glGenFramebuffers)(GLsizei n, GLuint *framebuffers);
-EXT_API void(EXT_ENTRY *glBindFramebuffer)(GLenum target, GLuint framebuffer);
-EXT_API void(EXT_ENTRY *glFramebufferTexture2D)(GLenum target, GLenum attachment, GLenum textarget,
-    GLuint texture, GLint level);
-EXT_API void(EXT_ENTRY *glDrawBuffers)(GLsizei n, const GLenum *bufs);
-EXT_API void(EXT_ENTRY *glBlendFuncSeparate)(GLenum, GLenum, GLenum, GLenum);
-EXT_API GLenum(EXT_ENTRY *glCheckFramebufferStatus)(GLenum target);
-EXT_API void(EXT_ENTRY *glDebugMessageCallback)(GLDEBUGPROC callback, const void *userParam);
-EXT_API void(EXT_ENTRY *glDebugMessageControl)(GLenum source, GLenum type, GLenum severity,
-    GLsizei count, const GLuint *ids, GLboolean enabled);
-}
-#undef EXT_API
-#undef EXT_ENTRY
+bool getScissor();
+void setScissor(bool enabled);
+void setScissorRect(int x, int y, int w, int h);
 
-}
+bool getDepthTest();
+void setDepthTest(bool enabled);
+void setDepthFunc(GLenum func);
 
-#endif
+bool getCullFace();
+void setCullFace(bool enabled);
 
+void setLineWidth(float w);
+void setPointSize(float s);
+
+void bindTexture(GLuint tex);
+GLuint getTexture();
+
+void bindFramebuffer(GLuint fb);
+
+void setMode(GLenum mode);
+void setColor(const Color& c);
+void setUv(float u, float v);
+void addVertex(float x, float y, float z = 0.0f);
+void addQuad(float x, float y, float ex, float ey);
+void addVertices(Vertex* vertex, size_t count);
+
+GLuint getIndexBase();
+void addIndex(GLuint index);
+
+void clear(float r, float g, float b, float a, bool depth = false);
+
+void setBlendFunc(GLenum src, GLenum dest);
+void setBlendFuncSeparate(GLenum srcRgb, GLenum destRgb, GLenum srcA, GLenum dstA);
+
+void emitDrawcalls();

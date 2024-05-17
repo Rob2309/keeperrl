@@ -1,4 +1,5 @@
 //
+// Copyright (c) 2014 Sergio Moura sergio@moura.us
 // Copyright (c) 2011 Andreas Krinke andreas.krinke@gmx.de
 // Copyright (c) 2009 Mikko Mononen memon@inside.org
 //
@@ -16,8 +17,15 @@
 //    misrepresented as being the original software.
 // 3. This notice may not be removed or altered from any source distribution.
 //
+// *** Modified for compatibility with KeeperRL OpenGL3 Renderer ***
+//
 
-#pragma once
+#ifndef FONTSTASH_H
+#define FONTSTASH_H
+
+#define STH_OPENGL3
+
+#include "opengl.h"
 
 #define STH_ESUCCESS 0
 // error opening file
@@ -29,7 +37,9 @@
 // not enough memory
 #define STH_ENOMEM -4
 
-#include "opengl.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct sth_stash* sth_create(int cachew, int cacheh);
 
@@ -37,10 +47,10 @@ int sth_add_font(struct sth_stash* stash, const char* path);
 int sth_add_font_from_memory(struct sth_stash* stash, unsigned char* buffer);
 
 int sth_add_bitmap_font(struct sth_stash* stash, int ascent, int descent, int line_gap);
-int sth_add_glyph_for_codepoint(struct sth_stash* stash, int idx, SDL::GLuint id, unsigned int codepoint,
+int sth_add_glyph_for_codepoint(struct sth_stash* stash, int idx, GLuint id, unsigned int codepoint,
                                 short size, short base, int x, int y, int w, int h,
                                 float xoffset, float yoffset, float xadvance);
-int sth_add_glyph_for_char(struct sth_stash* stash, int idx, SDL::GLuint id, const char* s,
+int sth_add_glyph_for_char(struct sth_stash* stash, int idx, GLuint id, const char* s,
                            short size, short base, int x, int y, int w, int h,
                            float xoffset, float yoffset, float xadvance);
 
@@ -60,3 +70,8 @@ void sth_vmetrics(struct sth_stash* stash,
 
 void sth_delete(struct sth_stash* stash);
 
+#ifdef __cplusplus
+}
+#endif
+
+#endif // FONTSTASH_H

@@ -1108,7 +1108,7 @@ void MapGui::renderAsciiObjects(Renderer& renderer, Vec2 size, milliseconds curr
       continue;
     for (ViewLayer layer : {ViewLayer::CREATURE, ViewLayer::ITEM, ViewLayer::FLOOR, ViewLayer::FLOOR_BACKGROUND})
       if (renderPos(wpos, layer)) {
-        if (lastHighlighted.tilePos && lastHighlighted.tilePos->y == wpos.y) {
+        if (lastHighlighted.tilePos && lastHighlighted.tilePos->y == wpos.y && lastHighlighted.tilePos->x == wpos.x) {
           if (!activeButton && lastHighlighted.creaturePos)
             drawCreatureHighlight(renderer, *lastHighlighted.creaturePos, size, Color::ALMOST_WHITE,
                 *objects[*lastHighlighted.tilePos]);
