@@ -3,6 +3,36 @@
 #include "util.h"
 #include "color.h"
 
+#ifdef ANDROID
+static auto g_VertexShaderSource = R"(#version 100
+  attribute vec2 in_Position;
+  attribute vec2 in_UV;
+  attribute vec4 in_Color;
+
+  uniform mat4 u_ProjectionMatrix;
+
+  varying vec2 v2f_UV;
+  varying vec4 v2f_Color;
+
+  void main() {
+    gl_Position = u_ProjectionMatrix * vec4(in_Position, 0.0, 1.0);
+    v2f_UV = in_UV;
+    v2f_Color = in_Color;
+  }
+)";
+static auto g_FragmentShaderSource = R"(#version 100
+  precision mediump float;
+
+  varying vec2 v2f_UV;
+  varying vec4 v2f_Color;
+
+  uniform sampler2D u_Texture;
+
+  void main() {
+    gl_FragColor = v2f_Color * texture2D(u_Texture, v2f_UV);
+  }
+)";
+#else
 static auto g_VertexShaderSource = R"(#version 330 core
   layout(location = 0) in vec2 in_Position;
   layout(location = 1) in vec2 in_UV;
@@ -31,6 +61,7 @@ static auto g_FragmentShaderSource = R"(#version 330 core
     out_Color = v2f_Color * texture(u_Texture, v2f_UV);
   }
 )";
+#endif
 
 static GLuint g_Program;
 static GLint g_LocProjectionMatrix;
@@ -106,6 +137,11 @@ void initializeGl(GLADloadproc getProcAddr) {
   g_Program = glCreateProgram();
   glAttachShader(g_Program, vShader);
   glAttachShader(g_Program, fShader);
+  #ifdef ANDROID
+  glBindAttribLocation(g_Program, 0, "in_Position");
+  glBindAttribLocation(g_Program, 1, "in_UV");
+  glBindAttribLocation(g_Program, 2, "in_Color");
+  #endif
   glLinkProgram(g_Program);
   checkProgram(g_Program, GL_LINK_STATUS);
   glValidateProgram(g_Program);

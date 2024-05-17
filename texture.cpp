@@ -117,9 +117,11 @@ optional<GLenum> Texture::loadFromMaybe(SDL::SDL_Surface* imageOrig) {
       mode = GL_RGB;
   }
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+#ifndef ANDROID
   glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
   glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
   glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+#endif
   CHECK_OPENGL_ERROR();
   glBindTexture(GL_TEXTURE_2D, *texId);
   glTexImage2D(GL_TEXTURE_2D, 0, mode, image->w, image->h, 0, mode, GL_UNSIGNED_BYTE, image->pixels);

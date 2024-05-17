@@ -5,6 +5,10 @@ set(BUILD_STATIC_LIBS on)
 set(BUILD_CURL_EXE off)
 set(BUILD_LIBCURL_DOCS off)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(CMAKE_POSITION_INDEPENDENT_CODE on)
+endif()
+
 project(KeeperRL)
 
 set(CMAKE_CXX_STANDARD 14)
@@ -74,11 +78,21 @@ configure_file(
 )
 
 file(GLOB KEEPER_SOURCES "*.cpp" "extern/*.cpp" "extern/glad/src/*.cpp")
-add_executable(
-    keeper
-    ${KEEPER_SOURCES}
-    ${KEEPER_VERSION_H}
-)
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    find_library(log-lib log)
+    add_library(
+        keeper
+        SHARED
+        ${KEEPER_SOURCES}
+        ${KEEPER_VERSION_H}
+    )
+else()
+    add_executable(
+        keeper
+        ${KEEPER_SOURCES}
+        ${KEEPER_VERSION_H}
+    )
+endif()
 target_include_directories(keeper PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(keeper PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/extern ${CMAKE_CURRENT_SOURCE_DIR}/extern/glad/include)
 target_include_directories(keeper PRIVATE ${sdl2_image_SOURCE_DIR}/include ${theora_SOURCE_DIR}/include ${OPENAL_INCLUDE_DIR})
@@ -95,6 +109,7 @@ target_link_libraries(
     vorbisfile
     theoradec
     ${OPENAL_LIBRARY}
+    ${log-lib}
 )
 target_precompile_headers(keeper PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/stdafx.h")
 if(ENABLE_STEAMWORKS)
@@ -138,6 +153,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
                 COMPILE_FLAGS -Wa,-mbig-obj
         )
     endif()
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    target_compile_definitions(keeper PRIVATE ANDROID)
 endif()
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDbgInfo")

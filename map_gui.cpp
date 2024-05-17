@@ -734,6 +734,11 @@ void MapGui::setCenter(double x, double y) {
   softCenter = none;
 }
 
+void MapGui::getCenter(double& x, double& y) {
+    x = center.x;
+    y = center.y;
+}
+
 void MapGui::setCenterRatio(double x, double y) {
   setCenter(x * levelBounds.width(), y * levelBounds.height());
 }

@@ -79,7 +79,7 @@ void GuiBuilder::clearHint() {
 
 GuiBuilder::~GuiBuilder() {}
 
-const int legendLineHeight = 30;
+const int legendLineHeight = 50;
 const int titleLineHeight = legendLineHeight + 8;
 
 int GuiBuilder::getStandardLineHeight() const {
@@ -994,6 +994,44 @@ SGuiElem GuiBuilder::drawVillainsOverlay(const VillageInfo& info, const optional
             GuiFactory::highlightColor(200)),
         Vec2(0, labelOffsetY)), 0, -1, 0, 5);
   };
+  auto moveMap = [this](double dx, double dy) {
+      double x, y;
+      this->mapGui->getCenter(x, y);
+      this->mapGui->setCenter(x + dx, y + dy);
+  };
+  auto leftCallback = [this, info, moveMap](Rectangle rect) { moveMap(-5.0, 0.0); };
+  auto rightCallback = [this, info, moveMap](Rectangle rect) { moveMap(5.0, 0.0); };
+  auto upCallback = [this, info, moveMap](Rectangle rect) { moveMap(0.0, -5.0); };
+  auto downCallback = [this, info, moveMap](Rectangle rect) { moveMap(0.0, 5.0); };
+  lines.addElemAuto(WL(stack,
+                        WL(getListBuilder)
+                                .addElemAuto(WL(translate, WL(label, "<"), Vec2(0, labelOffsetY)))
+                                .addSpace(10)
+                                .buildHorizontalList(),
+                        WL(buttonRect, leftCallback)
+                    ));
+  lines.addElemAuto(WL(stack,
+                        WL(getListBuilder)
+                                .addElemAuto(WL(translate, WL(label, ">"), Vec2(0, labelOffsetY)))
+                                .addSpace(10)
+                                .buildHorizontalList(),
+                        WL(buttonRect, rightCallback)
+                    ));
+  lines.addElemAuto(WL(stack,
+                        WL(getListBuilder)
+                                .addElemAuto(WL(translate, WL(label, "/\\"), Vec2(0, labelOffsetY)))
+                                .addSpace(10)
+                                .buildHorizontalList(),
+                        WL(buttonRect, upCallback)
+                    ));
+  lines.addElemAuto(WL(stack,
+                        WL(getListBuilder)
+                                .addElemAuto(WL(translate, WL(label, "\\/"), Vec2(0, labelOffsetY)))
+                                .addSpace(10)
+                                .buildHorizontalList(),
+                        WL(buttonRect, downCallback)
+                    ));
+  lines.addSpace(50);
   if (!info.villages.empty()) {
     auto callback = [this, info] (Rectangle rect) { drawAllVillainsMenu(rect.topLeft(), info); };
     lines.addElemAuto(WL(stack,
@@ -3346,9 +3384,9 @@ SGuiElem GuiBuilder::drawBuildingsOverlay(const vector<CollectiveInfo::Button>& 
     auto& lines = elem.second;
     string groupName = elem.first;
     elems.push_back(WL(setWidth, 350, WL(conditionalStopKeys,
-          WL(miniWindow, WL(stack,
+          WL(miniWindow, WL(setHeight, 200, WL(scrollable, WL(stack,
               WL(keyHandler, [=] { clearActiveButton(); }, Keybinding("EXIT_MENU"), true),
-              WL(margins, lines.buildVerticalList(), margin))),
+              WL(margins, lines.buildVerticalList(), margin))))),
           [this, groupName] {
               return collectiveTab == CollectiveTab::BUILDINGS && activeGroup == groupName;
           })));

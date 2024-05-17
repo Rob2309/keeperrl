@@ -318,7 +318,7 @@ void Renderer::drawFilledRectangle(const Rectangle& t, Color color, optional<Col
     a += Vec2(2, 2);
     b -= Vec2(1, 1);
   }
-
+  
   auto vBase = getIndexBase();
 
   setMode(GL_TRIANGLES);
@@ -349,7 +349,7 @@ void Renderer::drawLine(Vec2 from, Vec2 to, Color color, double width) {
   dy /= length;
   setColor(color);
   width /= 2;
-
+  
   auto vBase = getIndexBase();
 
   addVertex(from.x + dy * width, from.y - dx * width);
@@ -374,7 +374,7 @@ void Renderer::drawPoint(Vec2 pos, Color color, int size) {
   setPointSize(size);
   setMode(GL_POINTS);
   setColor(color);
-
+  
   auto vBase = getIndexBase();
   addVertex(pos.x, pos.y);
   addIndex(vBase);
@@ -456,7 +456,11 @@ void Renderer::setFullscreenMode(int v) {
   fullscreenMode = v;
 }
 
+#ifdef ANDROID
+static const Vec2 minResolution = Vec2(600, 450);
+#else
 static const Vec2 minResolution = Vec2(800, 600);
+#endif
 
 Vec2 Renderer::getMinResolution() {
   return minResolution;

@@ -30,53 +30,6 @@
 
 #include "fontstash.h"
 
-// Shaders
-#ifdef STH_OPENGL3
-    #define GLSL(version, shader)  "#version " #version "\n" #shader
-
-    const char vertexShader[] = GLSL(330 core,
-        // Input vertex data, different for all executions of this shader.
-        layout(location = 0) in vec3 vertexPosition_modelspace;
-        layout(location = 1) in vec2 vertexUV;
-
-        // Output data ; will be interpolated for each fragment.
-        out vec2 UV;
-        out vec4 vColor;
-
-        // Values that stay constant for the whole mesh.
-        uniform mat4 MVP;
-        uniform vec4 color = vec4(1.0f);
-
-        void main() {
-            // Output position of the vertex, in clip space : MVP * position
-            gl_Position =  MVP * vec4(vertexPosition_modelspace,1);
-
-            // UV of the vertex. No special space for this one.
-            UV = vertexUV;
-
-            // Color
-            vColor = color;
-        }
-    );
-
-    const char fragmentShader[] = GLSL(330 core,
-        // Interpolated values from the vertex shaders
-        in vec2 UV;
-        in vec4 vColor;
-
-        // Ouput data
-        out vec4 color;
-
-        // Values that stay constant for the whole mesh.
-        uniform sampler2D myTextureSampler;
-
-        void main() {
-            // Output color = color of the texture at the specified UV
-            color = vColor * texture(myTextureSampler, UV).rrrr;
-        }
-    );
-#endif
-
 #define HASH_LUT_SIZE 256
 #define MAX_ROWS 128
 #define VERT_COUNT (6*128)
