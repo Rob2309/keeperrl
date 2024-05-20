@@ -92,7 +92,11 @@ Texture& Texture::operator=(Texture&& tex) noexcept {
 }
 
 bool Texture::loadPixels(unsigned char* pixels) {
+  GLint prevTex;
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
+  glBindTexture(GL_TEXTURE_2D, this->texId.value());
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  glBindTexture(GL_TEXTURE_2D, prevTex);
 	return glGetError() == GL_NO_ERROR;
 }
 
