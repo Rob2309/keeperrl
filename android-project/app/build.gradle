@@ -60,7 +60,7 @@ dependencies {
 }
 
 tasks.register("copyGameFiles", Copy) {
-    from("../../keeperrl") {
+    from("../../") {
         include "data/**", "data_free/**", "data_contrib/**", "appconfig.txt", "appconfig-dev.txt", "battle*.txt"
     }
     into layout.buildDirectory.dir("gameAssets")
